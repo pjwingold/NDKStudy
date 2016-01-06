@@ -29,6 +29,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Bitmap mainImage;
     private Button resetBtn, javaUpdateBtn, jniUpdateBtn;
     private DisplayMetrics dm;
+    private TextView titleText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,7 +37,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
         customer = new Customer();
 
-        TextView tv = (TextView) findViewById(R.id.myText);
+        titleText = (TextView) findViewById(R.id.titleText);
         imageView = (ImageView) findViewById(R.id.image);
         resetBtn = (Button) findViewById(R.id.reset);
         javaUpdateBtn = (Button) findViewById(R.id.javaUpdate);
@@ -45,7 +46,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         javaUpdateBtn.setOnClickListener(this);
         jniUpdateBtn.setOnClickListener(this);
 
-        tv.setText(getNDKString());
+        titleText.setText(getNDKString());
         //Log.i(TAG, getNDKTest());
         incrementCount(10);
         incrementCount(5);
@@ -106,6 +107,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         long after = System.currentTimeMillis();
 
         Log.i(TAG, " " + (after - start) + " Java");
+        titleText.setText(String.format("Time taken to completed process in Java: (%f) seconds", (float) (after - start) / 1000));
         Toast.makeText(this, "Process finished", Toast.LENGTH_SHORT).show();
     }
 
@@ -117,6 +119,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         imageView.setImageBitmap(jBitmap);
         long after = System.currentTimeMillis();
 
+        titleText.setText(String.format("Time taken to completed process with JNI: (%f) seconds", (float) (after - start) / 1000));
         Log.i(TAG, " " + (after - start) + " JNI");
     }
 
