@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">NDKStudy</string>
+    <string name="java_update">Java Update</string>
+    <string name="jni_update">JNI Update</string>
+    <string name="reset">Reset</string>
 </resources>

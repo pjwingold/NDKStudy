@@ -3,6 +3,7 @@ package com.pjwin.ndkstudy.task;
 import android.app.Service;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.IBinder;
 import android.support.v4.content.LocalBroadcastManager;
@@ -27,6 +28,9 @@ public class ApplyEffectService extends Service {
     private final ApplyEffectServiceBinder mBinder = new ApplyEffectServiceBinder();
     private Bitmap mResultBitmap;
     private Bitmap mSourceBitmap;
+    private Uri mSourceImageUri;
+    private int reqWidth, reqHeight;
+
     private ExecutorService mService;
     private int mMethod;
     private int resultCode;
@@ -51,6 +55,18 @@ public class ApplyEffectService extends Service {
         mSourceBitmap = bitmap;
     }
 
+    public void setSourceImageUri(Uri imageUri) {
+        this.mSourceImageUri = imageUri;
+    }
+
+    public void setReqWidth(int reqWidth) {
+        this.reqWidth = reqWidth;
+    }
+
+    public void setReqHeight(int reqHeight) {
+        this.reqHeight = reqHeight;
+    }
+
     public void processImage(int method) {
         Log.i(TAG, Thread.currentThread().getId() + " id");
         mMethod = method;
@@ -59,6 +75,7 @@ public class ApplyEffectService extends Service {
         Log.i("Service", Runtime.getRuntime().availableProcessors() + " cores");
 
         mService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
         try {
             mService.submit(processImage);
         } finally {
@@ -68,6 +85,7 @@ public class ApplyEffectService extends Service {
 
     private void finished() {
         Intent in = new Intent(ACTION);
+
         in.putExtra(RESULT_CODE, resultCode);
         LocalBroadcastManager.getInstance(ApplyEffectService.this).sendBroadcast(in);
         stopSelf();
@@ -85,22 +103,28 @@ public class ApplyEffectService extends Service {
     private class ProcessImage implements Runnable {
         @Override
         public void run() {
-            Log.i(TAG, Thread.currentThread().getId() + " id");
-            switch (mMethod) {
-                case 1 ://java
-                    //SystemClock.sleep(20000);
-                    mResultBitmap = ImageUtil.toImageRelief(mSourceBitmap);
-                    break;
-                case 2://jni
-                    mResultBitmap = ImageUtil.toImageReliefJni(mSourceBitmap);
-                    break;
-                default:
-                    break;
+            if (mSourceImageUri == null && mSourceBitmap == null) {
+                resultCode = ERROR;
             }
-
+            else {
+                Log.i(TAG, Thread.currentThread().getId() + " id");
+                try {
+                    switch (mMethod) {
+                        case 1://java
+                            //SystemClock.sleep(20000);
+                            mResultBitmap = ImageUtil.toImageRelief(mSourceImageUri, reqWidth, reqHeight);
+                            break;
+                        case 2://jni
+                            mResultBitmap = ImageUtil.toImageReliefJni(mSourceImageUri, reqWidth, reqHeight);
+                            break;
+                        default:
+                            break;
+                    }
+                } catch (Exception e) {
+                    resultCode = ERROR;
+                }
+            }
             finished();
         }
     }
-
-
 }
