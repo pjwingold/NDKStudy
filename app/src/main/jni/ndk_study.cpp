@@ -42,6 +42,10 @@ Java_com_pjwin_ndkstudy_MainActivity_setLabelStrNative(JNIEnv *env, jobject inst
                                                        jstring str_) {
     const char *str = env->GetStringUTFChars(str_, 0);
 
+    if (str == NULL) {
+        return;
+    }
+
     jclass clz = (env)->GetObjectClass(instance);
 
     jfieldID fId = (env)->GetFieldID(clz, "labelStr", "Ljava/lang/String;");
@@ -61,6 +65,10 @@ JNIEXPORT void JNICALL
 Java_com_pjwin_ndkstudy_MainActivity_labelStrAppend(JNIEnv *env, jobject instance,
                                                     jstring appStr_) {
     const char *appStr = env->GetStringUTFChars(appStr_, 0);
+
+    if (appStr == NULL) {
+        return;
+    }
 
     jclass clz = env->GetObjectClass(instance);
 
@@ -94,8 +102,9 @@ Java_com_pjwin_ndkstudy_ImageUtil_toImageReliefNative(JNIEnv *env, jobject insta
 
     int newSize = width * height;
 
+    //need to actually allocate memory in case of large size image
     jint* dest = (jint *) malloc(newSize * sizeof(jint));
-    //jint dest[newSize];//can cause stackoverflow
+    //jint dest[newSize];//can cause stack overflow error
 
     LOGI("new size is %d", newSize);
 
