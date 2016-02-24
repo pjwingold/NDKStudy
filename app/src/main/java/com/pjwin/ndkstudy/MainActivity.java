@@ -7,41 +7,49 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.provider.MediaStore;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.v7.app.AppCompatActivity;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.pjwin.ndkstudy.entity.Customer;
 import com.pjwin.ndkstudy.task.ApplyEffectService;
 import com.pjwin.ndkstudy.task.ApplyEffectThread;
 
+import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener, ApplyEffectThread.ProcessImageCallback {
     private static final String TAG = "MainActivity";
+    private static final int REQUEST_GALLERY = 1;
     private int count = 0;
     private String labelStr = "";
     private Customer customer;
+
 
     static {
         System.loadLibrary("ndk_study");
     }
 
     private ImageView imageView;
+    private int ivWidth, ivHeight;
     private static Bitmap mainImage;
+    private static Uri imageUri;
+
     private Button resetBtn, javaUpdateBtn, jniUpdateBtn;
-    private DisplayMetrics dm;
     private TextView titleText;
     private ProgressBar pb;
 
@@ -55,12 +63,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public static final int PROCESS_JNI = 2;
 
     private int processId;
-    private Intent serviceIntent;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
         customer = new Customer();
 
         titleText = (TextView) findViewById(R.id.titleText);
@@ -72,6 +81,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         resetBtn.setOnClickListener(this);
         javaUpdateBtn.setOnClickListener(this);
         jniUpdateBtn.setOnClickListener(this);
+        imageView.setOnClickListener(this);
 
         titleText.setText(getNDKString());
         //Log.i(TAG, getNDKTest());
@@ -84,27 +94,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         Log.i(TAG, String.valueOf(count));
         Log.i(TAG, labelStr);
 
-        dm = new DisplayMetrics();
-        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-        wm.getDefaultDisplay().getMetrics(dm);
-        loadImage();
-
-        serviceIntent = new Intent(this, ApplyEffectService.class);
+        Intent serviceIntent = new Intent(this, ApplyEffectService.class);
         bindService(serviceIntent, mConnection, BIND_AUTO_CREATE);
         mService = Executors.newSingleThreadExecutor();
 
         //finish();
-
-    }
-
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
     }
 
     private void loadImage() {
-        mainImage = ImageUtil.decodeBitmapFromResource(getResources(), R.drawable.pic, dm.widthPixels, dm.heightPixels);
-        imageView.setImageBitmap(mainImage);
+        if (imageUri != null) {
+            new LoadImageTask(this, imageUri, ivWidth, ivHeight).execute();
+        }
     }
 
     private native String getNDKString();
@@ -133,9 +133,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             case R.id.reset:
                 resetImage();
                 break;
+            case R.id.image:
+                openPhoto();
+                break;
             default:
                 break;
         }
+    }
+
+    private void openPhoto() {
+        Intent i = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        startActivityForResult(i, REQUEST_GALLERY);
     }
 
     @Override
@@ -159,14 +167,47 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         Log.i(TAG, "onStop");
     }
 
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        ivHeight = imageView.getHeight();
+        ivWidth = imageView.getWidth();
+        loadImage();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        switch (requestCode) {
+            case REQUEST_GALLERY :
+                if (data != null) {
+                    imageUri = data.getData();
+
+                    applyEffectService.setSourceImageUri(imageUri);
+                    applyEffectService.setReqWidth(ivWidth);
+                    applyEffectService.setReqHeight(ivHeight);
+
+                    imageView.setImageURI(imageUri);
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
     private BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             int resultCode = intent.getIntExtra(ApplyEffectService.RESULT_CODE, ApplyEffectService.SUCCESS);
-            //if (resultCode == ApplyEffectService.SUCCESS) {
+            if (resultCode == ApplyEffectService.SUCCESS) {
                 onImageProcessFinished(applyEffectService.getResultBitmap());
-            //}
-            //unbindService(mConnection);
+            }
+            else if (resultCode == ApplyEffectService.ERROR) {
+                Toast.makeText(MainActivity.this.getApplicationContext(), "Error Processing Image", Toast.LENGTH_SHORT).show();
+                imageView.setVisibility(View.VISIBLE);
+                pb.setVisibility(View.GONE);
+            }
         }
     };
 
@@ -191,8 +232,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         //finish();
         start = System.currentTimeMillis();
         processId = PROCESS_JAVA;
-        pb.setVisibility(View.VISIBLE);
-
         processWithService();
         //processWithThread();
     }
@@ -200,13 +239,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void jniUpdate() {
         start = System.currentTimeMillis();
         processId = PROCESS_JNI;
-        pb.setVisibility(View.VISIBLE);
-
         processWithService();
         //processWithThread
     }
 
     private void processWithThread() {
+        if (imageUri == null && mainImage == null) {
+            return;
+        }
+        pb.setVisibility(View.VISIBLE);
         mService.execute(new ApplyEffectThread(mainImage, processId, this));
     }
 
@@ -215,16 +256,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void processWithService() {
-        //serviceIntent.putExtra(ApplyEffectService.SERVICE_METHOD, processId);
-        //startService(serviceIntent);
+        if (imageUri == null && mainImage == null) {
+            return;
+        }
+
         if (mBound) {
+            pb.setVisibility(View.VISIBLE);
             applyEffectService.processImage(processId);
         }
     }
 
     private void resetImage() {
+        if (imageUri == null) {
+            return;
+        }
+
         processId = 0;
-        imageView.setImageBitmap(mainImage);
+
+        imageView.setImageURI(imageUri);
     }
 
     @Override
@@ -244,9 +293,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void onImageProcessFinished(Bitmap bitmap) {
+        pb.setVisibility(View.GONE);
+        if (bitmap == null) {
+            return;
+        }
         imageView.setImageBitmap(bitmap);
         after = System.currentTimeMillis();
-        pb.setVisibility(View.GONE);
 
         switch (processId) {
             case PROCESS_JAVA:
@@ -259,6 +311,51 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 break;
             default:
                 break;
+        }
+    }
+
+    private static class LoadImageTask extends AsyncTask<Void, Void, Bitmap> {
+        private WeakReference<MainActivity> mRef;
+        private Uri imageUri;
+        private int reqWidth;
+        private int reqHeight;
+
+        public LoadImageTask(MainActivity activity, Uri imageUri, int reqWidth, int reqHeight) {
+            mRef = new WeakReference<>(activity);
+            this.imageUri = imageUri;
+            this.reqWidth = reqWidth;
+            this.reqHeight = reqHeight;
+        }
+
+        @Override
+        protected Bitmap doInBackground(Void... params) {
+            MainActivity activity = mRef.get();
+            if (activity == null || imageUri == null) {
+                return null;
+            }
+
+            Bitmap result = null;
+            try {
+                result = ImageUtil.decodeBitmapFromUri(imageUri, reqWidth, reqHeight);
+            } catch (IOException e) {
+                Log.e(TAG, e.getLocalizedMessage());
+            }
+
+            return result;
+        }
+
+        @Override
+        protected void onPostExecute(Bitmap bitmap) {
+            MainActivity activity = mRef.get();
+            if (activity == null || imageUri == null) {
+                return;
+            }
+
+            if (bitmap == null) {
+                Toast.makeText(activity.getApplicationContext(), "Unable to load image.", Toast.LENGTH_SHORT).show();
+            }
+
+            activity.imageView.setImageBitmap(bitmap);
         }
     }
 }
